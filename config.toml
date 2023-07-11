@@ -23,6 +23,29 @@ googleanalytics = "G-WM5QQ0P3P1"
 [outputs]
 home = [ "HTML", "RSS", "JSON"]
 
+
+# Site params
+[params]
+alwaysopen = false
+collapsibleMenu = true
+themeVariant = "red"
+disableShortcutsTitle = true
+# showVisitedLinks = true
+# ordersectionsby = "weight" # ordersectionsby = "title"
+#color_main = "#CC0000"
+# color_second = "#b30000"
+# disableSearch = false # default is false
+# disableNavChevron = false # set true to hide next/prev chevron, default is false
+menushortcutsnewtab = true
+
+# #editURL = "https://github.com/vjeantet/hugo-theme-docport/edit/master/exampleSite/content/"
+
+disableInlineCopyToClipBoard = true # Don't display the copy-to-clipboard button on inline code blocks, default is false
+
+[mediaTypes]
+  [mediaTypes."application/netlifyconfig"]
+    suffixes = ["yml"]
+
 [outputFormats]
   [outputFormats.PRINT]
     name= "PRINT"
@@ -48,34 +71,11 @@ home = [ "HTML", "RSS", "JSON"]
     permalinkable = false
     noUgly = true
     
-# Site params
-[params]
-alwaysopen = false
-collapsibleMenu = true
-themeVariant = "red"
-disableShortcutsTitle = true
-# showVisitedLinks = true
-# ordersectionsby = "weight" # ordersectionsby = "title"
-#color_main = "#CC0000"
-# color_second = "#b30000"
-# disableSearch = false # default is false
-# disableNavChevron = false # set true to hide next/prev chevron, default is false
-menushortcutsnewtab = true
-
-# #editURL = "https://github.com/vjeantet/hugo-theme-docport/edit/master/exampleSite/content/"
-
-disableInlineCopyToClipBoard = true # Don't display the copy-to-clipboard button on inline code blocks, default is false
-
-[mediaTypes]
-  [mediaTypes."application/netlifyconfig"]
-    suffixes = ["yml"]
-
-[outputFormats]
-[outputFormats.netlifyyaml]
-mediaType = "application/netlifyconfig"
-isPlainText = true
-isHTML = false
-notAlternative = true
+  [outputFormats.netlifyyaml]
+    mediaType = "application/netlifyconfig"
+    isPlainText = true
+    isHTML = false
+    notAlternative = true
 
 [markup.goldmark.renderer]
 unsafe = true
