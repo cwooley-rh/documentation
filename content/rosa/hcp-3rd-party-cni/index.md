@@ -42,13 +42,13 @@ authors:
         nodeSelector: all()
       ```
    2. `oc create -f ippool.yaml` -->
-5. Edit Security Group for Worker Nodes
+4. Edit Security Group for Worker Nodes
    1. Inbound:
       - tcp/179 from VPC CIDR
         - this is for BGP communication between nodes
       - tcp/5473 from VPC CIDR
         -  this is for Typha communication between nodes
-6. Restart Calico Components
+5. Restart Calico Components
    1. `oc rollout restart daemonset calico-node -n calico-system`
    2. `oc rollout restart deployment calico-typha -n calico-system`
    3. `oc rollout restart deployment calico-kube-controllers -n calico-system`
