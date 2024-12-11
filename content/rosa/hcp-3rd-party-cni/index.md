@@ -20,17 +20,31 @@ authors:
 
 1. Login to cluster api
 2. Download Calico Operator Resources
-   1.  `mkdir calico \ wget -qO- https://github.com/projectcalico/calico/releases/download/v3.29.1/ocp.tgz | tar xvz --strip-components=1 -C calico`
-3. Install CRDs, Operator and other Dependencies
-   1. `ls *crd.p* | xargs -n1 oc create -f`
-   2. `ls *operator.* | xargs -n1 oc create -f`
-   3. `ls 00* | xargs -n1 oc create -f`
-   4. `ls 01* | xargs -n1 oc create -f`
-   5. `ls 02* | xargs -n1 oc create -f`
-   6. `oc create -f policy.networking.k8s.io_adminnetworkpolicies.yaml`
-<!-- 4. Create IPPool
+   1. ```bash
+      mkdir calico && wget -qO- https://github.com/projectcalico/calico/releases/download/v3.29.1/ocp.tgz | tar xvz --strip-components=1 -C calico
+      ```
+3. Install CRDs first (make sure these complete before proceeding)
+   1. ```bash
+      oc create -f calico/tigera-operator.yaml
+      oc wait --for condition=established --timeout=60s crd/installations.operator.tigera.io
+      oc wait --for condition=established --timeout=60s crd/apiservers.operator.tigera.io
+      oc wait --for condition=established --timeout=60s crd/ippools.crd.projectcalico.org
+      ```
+4. Install remaining resources
+   1. ```bash
+      oc create -f calico/00-namespace-tigera-operator.yaml
+      oc create -f calico/02-rolebinding-tigera-operator.yaml
+      oc create -f calico/02-role-tigera-operator.yaml
+      oc create -f calico/02-serviceaccount-tigera-operator.yaml
+      oc create -f calico/custom-resources.yaml
+      ```
+5. Wait for operator to be ready
+   1. ```bash
+      oc wait --for=condition=ready pod -l name=tigera-operator -n tigera-operator --timeout=120s
+      ```
+<!-- 6. Create IPPool (now this should work)
    1. ```yaml
-      apiVersion: projectcalico.org/v3
+      apiVersion: crd.projectcalico.org/v1
       kind: IPPool
       metadata:
         name: default-ipv4-ippool
@@ -40,8 +54,7 @@ authors:
         ipipMode: Never
         natOutgoing: true
         nodeSelector: all()
-      ```
-   2. `oc create -f ippool.yaml` -->
+      ``` -->
 4. Edit Security Group for Worker Nodes
    1. Inbound:
       - tcp/179 from VPC CIDR
