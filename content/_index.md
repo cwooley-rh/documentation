@@ -17,6 +17,7 @@ description: "Step-by-step tutorials from Red Hat experts to help you get the mo
 * [Configuring ROSA with HCP Private Cluster API Access](/experts/rosa/hcp-private-api-access/)
 * [Securely exposing an application on a private ROSA cluster with a Network Load Balancer](/experts/rosa/hcp-private-nlb/)
 * [Add an Ingress Controller to ROSA with a custom domain](/experts/rosa/ingress-controller)
+* [Installing 3rd Party CNI on ROSA HCP](/experts/rosa/hcp-3rd-party-cni)
 
 
 #### Classic
