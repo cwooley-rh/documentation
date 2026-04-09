@@ -6,7 +6,7 @@ aliases:
   - /experts/misc/rhoai-s3
 authors:
   - Diana Sari
-validated_version: "4.20"
+validated_version: "4.21"
 ---
 
 
@@ -21,7 +21,7 @@ Before you start, make sure you have:
 - a working ROSA cluster
 - cluster-admin access
 - a default dynamic storage class
-- enough worker capacity for OpenShift AI
+- enough worker capacity for OpenShift AI (at least 3 worker nodes or larger instance types to accommodate the RHOAI dashboard's default 2-replica deployment)
 - an S3 bucket and credentials
 
 If your existing worker nodes are too small or already heavily used, create a dedicated machine pool for OpenShift AI before continuing.
@@ -41,13 +41,13 @@ From the OpenShift web console:
 2. Search for **Red Hat OpenShift AI**
 3. Install the operator
 
-At this point, the default OpenShift AI installation can leave the `DataScienceCluster` in a `Not Ready` state because `KServe` is enabled by default and expects additional serving-related dependencies, even though this walkthrough only uses workbenches and Amazon S3.
+After the operator installs, the `DSCInitialization` (DSCI) object is created automatically. However, the default DSCI enables Service Mesh, which requires the `servicemeshoperator` to be installed. Since this walkthrough does not use model serving, the operator can get stuck waiting for that dependency, preventing the `DataScienceCluster` from being created.
 
 ## 2. Disable KServe-related blockers for this walkthrough
 
 This guide does not use model serving, so remove the unnecessary serving dependencies after installing OpenShift AI.
 
-Patch the DSCI to remove Service Mesh:
+First, patch the DSCI to remove Service Mesh. This unblocks the operator:
 
 ```bash
 oc patch dsci default-dsci -n redhat-ods-operator --type=merge -p '
@@ -57,7 +57,40 @@ spec:
 '
 ```
 
-Patch the DSC to remove KServe:
+If the `DataScienceCluster` is not created automatically after a few minutes, create it manually with KServe already disabled:
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: datasciencecluster.opendatahub.io/v1
+kind: DataScienceCluster
+metadata:
+  name: default-dsc
+spec:
+  components:
+    codeflare:
+      managementState: Removed
+    dashboard:
+      managementState: Managed
+    datasciencepipelines:
+      managementState: Managed
+    kserve:
+      managementState: Removed
+    kueue:
+      managementState: Removed
+    modelmeshserving:
+      managementState: Removed
+    ray:
+      managementState: Removed
+    trainingoperator:
+      managementState: Removed
+    trustyai:
+      managementState: Removed
+    workbenches:
+      managementState: Managed
+EOF
+```
+
+If the DSC was auto-created instead, patch it to remove KServe:
 
 ```bash
 oc patch datasciencecluster default-dsc -n redhat-ods-applications --type=merge -p '
@@ -71,7 +104,7 @@ spec:
 Verify that the cluster becomes ready:
 
 ```bash
-oc get datasciencecluster default-dsc -n redhat-ods-applications -o jsonpath='{.status.phase}{"\n"}'
+oc get datasciencecluster default-dsc -o jsonpath='{.status.phase}{"\n"}'
 ```
 
 You want the output to become:
@@ -222,7 +255,7 @@ model.save_pretrained(model_save_dir)
 
 # upload to S3
 s3_client = boto3.client("s3")
-bucket_name = "rhoai-test-s3-bucket"
+bucket_name = os.environ.get("AWS_S3_BUCKET", "rhoai-test-s3-bucket")
 model_save_path = "model/"
 
 for file_name in os.listdir(model_save_dir):
