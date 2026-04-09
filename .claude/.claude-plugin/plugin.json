@@ -1,0 +1,8 @@
+{
+  "name": "mobb-docs",
+  "description": "Custom skills for the MOBB/Red Hat Cloud Experts documentation repo",
+  "author": {
+    "name": "Connor Wooley",
+    "email": "cwooley@redhat.com"
+  }
+}
