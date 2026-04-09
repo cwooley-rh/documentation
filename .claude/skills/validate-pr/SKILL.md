@@ -60,6 +60,11 @@ Provision test infrastructure using Terraform for one-command teardown.
 For provider-specific variables, login commands, and teardown procedures,
 read [references/infra-providers.md](references/infra-providers.md).
 
+**ROSA cluster type rule:** Always provision ROSA HCP (hosted control plane)
+clusters unless the guide under test explicitly states it requires a classic
+(non-HCP) cluster. HCP clusters provision faster (~20 min vs ~40 min) and
+are the current ROSA default. Set `hosted_control_plane = true` in tfvars.
+
 **Before provisioning, confirm with the user:**
 - Region/location
 - Cluster sizing

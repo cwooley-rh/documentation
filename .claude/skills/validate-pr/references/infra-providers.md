@@ -2,6 +2,12 @@
 
 ## AWS / ROSA
 
+> **Default to HCP.** Always provision ROSA HCP (hosted control plane)
+> clusters unless the guide under test explicitly requires a classic cluster.
+> HCP is faster (~20 min vs ~40 min), cheaper, and is the current ROSA
+> default. Only set `hosted_control_plane = false` if the guide explicitly
+> says "classic" or tests classic-only features.
+
 ### Terraform repo
 
 ```
@@ -18,15 +24,14 @@ aws sts get-caller-identity
 ### Variables
 
 ```bash
-export TF_VAR_token="$(jq -r .refresh_token \
-  ~/Library/Application\ Support/ocm/ocm.json)"  # macOS
-# Linux: ~/.config/ocm/ocm.json
+export TF_VAR_token="$(rosa token)"  # preferred: uses current CLI session
+# Alternative: TF_VAR_token="$(jq -r .refresh_token ~/Library/Application\ Support/ocm/ocm.json)"
 
 export TF_VAR_cluster_name="<name>"
 export TF_VAR_admin_password='Passw0rd12345!'
 export TF_VAR_developer_password=''
 export TF_VAR_private=false
-export TF_VAR_hosted_control_plane=true   # HCP is faster (~20 min)
+export TF_VAR_hosted_control_plane=true   # HCP default — only change if guide requires classic
 export TF_VAR_multi_az=false
 ```
 
@@ -59,13 +64,23 @@ terraform output -raw cluster_name
 
 ```bash
 cd /tmp/terraform-rosa
-terraform destroy -auto-approve
+TF_VAR_token=$(rosa token) terraform destroy -auto-approve
 ```
 
 ### Typical timing
 
 - HCP: ~20 minutes
 - Classic: ~45 minutes
+
+### Known issues
+
+- **Token expiry:** ROSA OCM tokens expire during long classic cluster
+  provisions (~40 min). If `terraform apply` fails mid-create with an
+  "access and refresh tokens are unavailable" error, check `rosa describe
+  cluster -c <name>` — the cluster may have finished. Re-run `terraform
+  apply` with a fresh token to sync state, or use HCP to avoid the issue.
+- **Pass token via env var or `rosa token`**, not in tfvars, to avoid
+  stale tokens in files.
 
 ---
 
