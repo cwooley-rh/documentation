@@ -5,7 +5,7 @@ description: >-
   "test a documentation PR", "verify docs against a cluster",
   "/validate-pr", or mentions running guide steps against live
   infrastructure for rh-mobb/documentation pull requests.
-version: "0.2.0"
+version: "0.3.0"
 user-invocable: true
 ---
 
@@ -23,8 +23,10 @@ to the upstream PR.
 
 ## Workflow
 
-Four phases. For detailed procedures, read
-[references/workflow.md](references/workflow.md).
+Five phases. For detailed procedures, read
+[references/workflow.md](references/workflow.md). For recurring issues and
+lessons from prior validations, read
+[references/known-patterns.md](references/known-patterns.md).
 
 ### Phase 1: PR Analysis
 
@@ -107,6 +109,43 @@ Fix commit workflow:
 5. Push to `connor` remote (`cwooley-rh/documentation`)
 6. Comment on the upstream PR with results and cherry-pick command:
    `gh pr comment <number> --repo rh-mobb/documentation --body "..."`
+
+### Phase 5: Retrospective
+
+After posting the report and before teardown, review what happened during
+this validation and feed learnings back into the skill.
+
+**Update `references/known-patterns.md` when:**
+- A doc issue appeared that matches an existing pattern (increment frequency)
+- A new recurring pattern emerged (seen in 2+ PRs)
+- An infrastructure failure mode was hit for the first time
+- A workaround was discovered that future runs should know about
+
+**Update `references/infra-providers.md` when:**
+- A new Terraform variable or flag was needed
+- A provider-specific workaround was required
+- Timing estimates changed based on observed provision times
+
+**Save a memory when:**
+- The user expressed a preference that should persist across sessions
+- A cross-session rule was established (e.g., "always use HCP")
+
+**Commit skill updates:**
+```bash
+git checkout feature/validate-pr-skill
+# Edit references/known-patterns.md, infra-providers.md, etc.
+git add .claude/skills/validate-pr/
+git commit -s -m 'Update validate-pr skill from PR #<N> retrospective'
+git push connor feature/validate-pr-skill
+git checkout -   # return to previous branch
+```
+
+**Questions to ask during retrospective:**
+1. What broke that was NOT the guide's fault? (infra failure → known-patterns)
+2. What doc problem appeared for the 2nd+ time? (pattern → known-patterns)
+3. What should the skill have warned about up front? (guard rail → SKILL.md)
+4. Were non-Terraform resources created that blocked teardown? (→ infra-providers)
+5. Did the user correct our approach? (preference → memory)
 
 ## Multi-Guide PRs
 

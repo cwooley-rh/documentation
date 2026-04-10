@@ -106,6 +106,18 @@ test report header.
 
 ## Phase 3: Execution
 
+### Pre-execution: check known patterns
+
+Before starting execution, read `known-patterns.md` and scan for patterns
+that match this guide. For example:
+- Does this guide have a cleanup section? (Missing cleanup is the most
+  common issue.)
+- Does the cleanup section reference resource names that match the deploy
+  steps?
+- Are environment variables exported correctly?
+
+Anticipating known issues saves debugging time during execution.
+
 ### Environment variable tracking
 
 Maintain a running set of environment variables across sections. When a
@@ -200,11 +212,75 @@ EOF
 
 Use the full template from `test-report-template.md`.
 
+## Phase 5: Retrospective
+
+Before teardown, review what happened and update the skill.
+
+### Review checklist
+
+Walk through these questions and act on any "yes":
+
+1. **New doc pattern?** Did a documentation issue appear that we've seen
+   before in a different PR? If so, update `known-patterns.md` — either
+   add a new entry or increment the frequency and add the new PR to
+   "Seen in."
+
+2. **New infra failure?** Did Terraform, cloud providers, or tooling fail
+   in an unexpected way? Add it to the "Infrastructure Failure Modes"
+   section of `known-patterns.md` with the mitigation that worked.
+
+3. **New workaround?** Did we discover a provider-specific trick (flag,
+   env var, timing)? Update `infra-providers.md`.
+
+4. **User feedback?** Did the user correct our approach or confirm a
+   non-obvious choice? Save a memory file.
+
+5. **Guard rail gap?** Did we do something risky that the skill should
+   have warned about? Add to the Guard Rails section in `SKILL.md`.
+
+### Commit the updates
+
+```bash
+git stash  # if on a fix branch with uncommitted changes
+git checkout feature/validate-pr-skill
+
+# Make edits to references/known-patterns.md, infra-providers.md, etc.
+git add .claude/skills/validate-pr/
+git commit -s -m 'Update validate-pr skill from PR #<N> retrospective
+
+- <list changes made>
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>'
+
+git push connor feature/validate-pr-skill
+git checkout -   # return to previous branch
+git stash pop    # if needed
+```
+
+### Track what changed
+
+The commit message should list what was updated so future reads of
+`git log` on the skill branch show the learning history:
+- "Added missing-cleanup pattern from PR #899"
+- "Updated token expiry mitigation from PR #899"
+- "Added ROSA HCP default rule from user feedback"
+
 ## Cleanup
 
-After reporting, prompt the user before cleanup:
+After the retrospective, prompt the user before cleanup:
 
-1. Terraform-managed resources: `terraform destroy -auto-approve`
-2. Guide-created resources (storage accounts, helm releases, namespaces):
-   run the guide's cleanup section if present
-3. Local temp files: remove `/tmp/terraform-*`, model dirs, scripts
+1. **Non-Terraform resources first**: Delete any cloud resources created
+   by the guide outside of Terraform (storage accounts, IAM roles, log
+   groups, helm releases). These block `terraform destroy` if they're
+   inside the same resource group / VPC.
+2. **Terraform-managed resources**: `terraform destroy -auto-approve`
+3. **Verify**: Check that no orphaned resources remain:
+   ```bash
+   # AWS
+   aws iam list-roles --query 'Roles[?contains(RoleName, `<cluster>`)]'
+   aws logs describe-log-groups --log-group-name-prefix "/aws/containerinsights/<cluster>"
+
+   # Azure
+   az resource list --resource-group <rg> -o table
+   ```
+4. **Local temp files**: remove `/tmp/terraform-*` directories
