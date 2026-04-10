@@ -5,7 +5,7 @@ tags: ["ROSA"]
 authors:
   - Kevin Collins
   - Michael McNeill
-validated_version: "4.20"
+validated_version: "4.21"
 ---
 This document shows how you can use the AWS CloudWatch Agent to scrape Prometheus endpoints and publish metrics to CloudWatch in a Red Hat OpenShift Service on AWS (ROSA) cluster.
 
@@ -345,3 +345,33 @@ Currently the AWS CloudWatch Agent [does not support](https://github.com/aws/ama
 1. After 5-10 minutes, view the dashboard and see the data flowing into CloudWatch:
 
    ![Example AWS Dashboard](./dashboard.png)
+
+## Cleanup
+
+1. Delete the CloudWatch Agent deployment and namespace:
+
+   ```bash
+   oc delete project amazon-cloudwatch
+   ```
+
+1. Delete the cluster role and cluster role binding:
+
+   ```bash
+   oc delete clusterrole cwagent-prometheus-role
+   oc delete clusterrolebinding cwagent-prometheus-role-binding
+   ```
+
+1. Detach the IAM policy and delete the IAM role:
+
+   ```bash
+   aws iam detach-role-policy --role-name "${ROSA_CLUSTER_NAME}-cloudwatch-agent" \
+     --policy-arn "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+   aws iam delete-role --role-name "${ROSA_CLUSTER_NAME}-cloudwatch-agent"
+   ```
+
+1. Delete the CloudWatch log group:
+
+   ```bash
+   aws logs delete-log-group \
+     --log-group-name "/aws/containerinsights/${ROSA_CLUSTER_NAME}/prometheus"
+   ```
