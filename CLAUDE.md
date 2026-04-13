@@ -46,3 +46,18 @@ Guides can be validated by executing their steps against live cloud infrastructu
 - Default to ROSA HCP clusters unless the guide explicitly requires classic — HCP is faster and cheaper
 - Delete all non-Terraform resources (storage accounts, IAM roles, operators, Helm releases) before running `terraform destroy`
 - Track results per section (PASS / FAIL / SKIP) and note every issue with severity
+
+## Compact instructions
+
+When compacting context, always preserve:
+- The current environment variable set (every `export` and assignment)
+- The per-section results table (PASS / FAIL / SKIP with notes)
+- The cluster name, API URL, and login credentials
+- Any error output from failed steps that hasn't been resolved yet
+- The PR number, guide path, and current execution phase
+
+Safe to drop during compaction:
+- Successful command stdout (the PASS record is sufficient)
+- Terraform plan output after apply succeeds
+- Intermediate `oc get` output used only for verification
+- File contents that have already been read and acted on

@@ -5,7 +5,7 @@ description: >-
   "test a documentation PR", "verify docs against a cluster",
   "/validate-pr", or mentions running guide steps against live
   infrastructure for rh-mobb/documentation pull requests.
-version: "0.4.0"
+version: "0.5.0"
 user-invocable: true
 ---
 
@@ -26,7 +26,7 @@ to the upstream PR.
 Five phases. For detailed procedures, read
 [references/workflow.md](references/workflow.md). For recurring issues and
 lessons from prior validations, read
-[references/known-patterns.md](references/known-patterns.md).
+[../../shared/known-patterns.md](../../shared/known-patterns.md).
 
 ### Phase 1: PR Analysis
 
@@ -46,8 +46,13 @@ For each guide, determine:
   to other guides)
 - **Execution order** when multiple guides share infrastructure
 
-Use `scripts/extract-guide-steps.sh <path>` to parse each guide into an
-ordered list of sections and bash code blocks.
+Use `../../shared/scripts/extract-guide-steps.sh <path>` to parse each
+guide into an ordered list of sections and bash code blocks.
+
+Based on the guide's content path, load the product knowledge base:
+- `content/rosa/` → read `../../products/rosa.md`
+- `content/aro/` → read `../../products/aro.md`
+- `content/osd/` → read `../../products/osd-gcp.md`
 
 ### Phase 2: Infrastructure
 
@@ -59,8 +64,9 @@ Provision test infrastructure using Terraform for one-command teardown.
 | `content/aro/`   | Azure    | `rh-mobb/terraform-aro`   |
 | `content/redhat/`| varies   | Infer from guide prereqs  |
 
-For provider-specific variables, login commands, and teardown procedures,
-read [references/infra-providers.md](references/infra-providers.md).
+For provisioning procedures, use `/provision` or read its reference at
+`../provision/references/providers.md`. For product-specific context, read
+the product knowledge base loaded in Phase 1.
 
 **ROSA cluster type rule:** Always provision ROSA HCP (hosted control plane)
 clusters unless the guide under test explicitly states it requires a classic
@@ -99,7 +105,7 @@ For each guide, in dependency order:
 ### Phase 4: Report and Fix
 
 Generate a test report per
-[references/test-report-template.md](references/test-report-template.md).
+[../../shared/test-report-template.md](../../shared/test-report-template.md).
 
 Fix commit workflow:
 1. Fetch the PR branch: `git fetch <remote> <branch>`
@@ -115,16 +121,19 @@ Fix commit workflow:
 After posting the report and before teardown, review what happened during
 this validation and feed learnings back into the skill.
 
-**Update `references/known-patterns.md` when:**
+**Update `../../shared/known-patterns.md` when:**
 - A doc issue appeared that matches an existing pattern (increment frequency)
 - A new recurring pattern emerged (seen in 2+ PRs)
 - An infrastructure failure mode was hit for the first time
 - A workaround was discovered that future runs should know about
 
-**Update `references/infra-providers.md` when:**
+**Update `../../products/<product>.md` when:**
 - A new Terraform variable or flag was needed
 - A provider-specific workaround was required
 - Timing estimates changed based on observed provision times
+
+**Update `../../shared/review-checklist.md` when:**
+- A new review-detectable pattern emerged from validation
 
 **Save a memory when:**
 - The user expressed a preference that should persist across sessions
@@ -132,19 +141,21 @@ this validation and feed learnings back into the skill.
 
 **Commit skill updates:**
 ```bash
-git checkout feature/validate-pr-skill
-# Edit references/known-patterns.md, infra-providers.md, etc.
-git add .claude/skills/validate-pr/
-git commit -s -m 'Update validate-pr skill from PR #<N> retrospective'
-git push connor feature/validate-pr-skill
-git checkout -   # return to previous branch
+git stash
+git checkout agentic-workflows
+# Edit shared/known-patterns.md, products/<product>.md, etc.
+git add .claude/shared/ .claude/products/ .claude/skills/
+git commit -s -m 'Update skills from PR #<N> retrospective'
+git push connor agentic-workflows
+git checkout -
+git stash pop
 ```
 
 **Questions to ask during retrospective:**
 1. What broke that was NOT the guide's fault? (infra failure → known-patterns)
 2. What doc problem appeared for the 2nd+ time? (pattern → known-patterns)
 3. What should the skill have warned about up front? (guard rail → SKILL.md)
-4. Were non-Terraform resources created that blocked teardown? (→ infra-providers)
+4. Were non-Terraform resources created that blocked teardown? (→ products/<product>.md)
 5. Did the user correct our approach? (preference → memory)
 
 ## Multi-Guide PRs
@@ -174,11 +185,15 @@ git clone --depth=1 https://github.com/rh-mobb/terraform-rosa.git /tmp/terraform
 
 ```bash
 # Terminal 1
-cd .worktrees/pr-912 && claude -p "/validate-pr 912"
+cd .worktrees/pr-912 && claude --model sonnet -p "/validate-pr 912"
 
 # Terminal 2
-cd .worktrees/pr-917 && claude -p "/validate-pr 917"
+cd .worktrees/pr-917 && claude --model sonnet -p "/validate-pr 917"
 ```
+
+Use `--model sonnet` for validation agents. Sonnet handles step-by-step
+execution well at ~80% lower cost than Opus. Use Opus only for interactive
+sessions where you need deep architectural reasoning.
 
 Each agent inherits the PR number from its invocation. All paths are
 parameterized by PR number:
@@ -230,6 +245,50 @@ quota collisions:
 | 2 | us-east-2 |
 | 3 | us-west-2 |
 | 4 | ca-central-1 |
+
+## Token Optimization
+
+### Model selection
+- **Validation agents** (parallel or solo): Launch with `--model sonnet`
+- **Interactive sessions** (debugging, architecture): Use Opus (global default)
+- **Subagents** for research or file exploration: Use `model: "haiku"`
+
+### Context management
+- Run `/compact preserve env vars and section results` between phases
+  when context is growing large (especially after Phase 2 and Phase 3)
+- Use subagents (Agent tool) for operations that produce verbose output
+  (terraform plan, large `oc get` dumps) — their output stays in the
+  subagent's context and only a summary returns
+- After terraform provision completes, the plan output is no longer needed
+- After a guide section PASSes, the command stdout is no longer needed —
+  only the PASS/FAIL/SKIP record matters
+
+### Verbose output control
+Pipe verbose commands to limit what enters the context window:
+```bash
+# Terraform: capture plan to file, show summary only
+terraform plan -out tf.plan 2>&1 | tail -5
+
+# Large oc output: limit to what you need
+oc get pods -n <ns> --no-headers | head -20
+
+# Operator CSV: extract just the field you need
+oc get csv -n <ns> -o name | grep <operator>
+```
+
+### Effort level
+- Use `/effort low` during Phase 3 execution for routine command runs
+- Use `/effort auto` (default) for Phase 1 analysis and Phase 4 reporting
+- Use `/effort high` only when diagnosing complex failures
+
+### Reference loading
+Read reference files only when entering that phase:
+- `references/workflow.md` — read only the section for the current phase
+- `../../products/<product>.md` — read at Phase 1 (based on content path)
+- `../provision/references/providers.md` — read at Phase 2 start
+- `../../shared/known-patterns.md` — read at Phase 3 start
+- `../../shared/test-report-template.md` — read at Phase 4 start
+Do not read all references upfront.
 
 ## Guard Rails
 

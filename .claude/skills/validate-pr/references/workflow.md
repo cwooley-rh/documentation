@@ -39,7 +39,7 @@ Build an execution order: prerequisite guides first.
 ### Extract steps with the helper script
 
 ```bash
-bash .claude/skills/validate-pr/scripts/extract-guide-steps.sh \
+bash .claude/shared/scripts/extract-guide-steps.sh \
   content/<section>/<topic>/index.md
 ```
 
@@ -72,18 +72,11 @@ az provider show -n Microsoft.RedHatOpenShift --query "registrationState"
 ### Provision via Terraform
 
 Clone the appropriate Terraform repo into `/tmp/`, suffixed by PR number
-to support parallel sessions:
+to support parallel sessions. See `../provision/references/providers.md`
+for provider-specific variable lists and commands, or use `/provision`
+directly.
 
-```bash
-# ROSA
-git clone --depth=1 https://github.com/rh-mobb/terraform-rosa.git /tmp/terraform-rosa-$PR
-
-# ARO
-git clone --depth=1 https://github.com/rh-mobb/terraform-aro.git /tmp/terraform-aro-$PR
-```
-
-Set variables and apply. Use `cwooley-pr$PR` as the cluster name for
-isolation. See `infra-providers.md` for provider-specific variable lists.
+Use `cwooley-pr$PR` as the cluster name for isolation.
 
 ```bash
 cd /tmp/terraform-<provider>-$PR
@@ -109,8 +102,8 @@ test report header.
 
 ### Pre-execution: check known patterns
 
-Before starting execution, read `known-patterns.md` and scan for patterns
-that match this guide. For example:
+Before starting execution, read `../../shared/known-patterns.md` and scan
+for patterns that match this guide. For example:
 - Does this guide have a cleanup section? (Missing cleanup is the most
   common issue.)
 - Does the cleanup section reference resource names that match the deploy
@@ -166,7 +159,7 @@ When a step fails:
 
 ### Generate test report
 
-Use the template from `test-report-template.md`. Fill in:
+Use the template from `../../shared/test-report-template.md`. Fill in:
 - Cluster details (name, version, region, provider)
 - Per-guide section results
 - Issues found with descriptions
@@ -224,14 +217,16 @@ Walk through these questions and act on any "yes":
 1. **New doc pattern?** Did a documentation issue appear that we've seen
    before in a different PR? If so, update `known-patterns.md` — either
    add a new entry or increment the frequency and add the new PR to
-   "Seen in."
+   "Seen in." Update `../../shared/review-checklist.md` if the pattern
+   is review-detectable.
 
 2. **New infra failure?** Did Terraform, cloud providers, or tooling fail
    in an unexpected way? Add it to the "Infrastructure Failure Modes"
    section of `known-patterns.md` with the mitigation that worked.
 
 3. **New workaround?** Did we discover a provider-specific trick (flag,
-   env var, timing)? Update `infra-providers.md`.
+   env var, timing)? Update the relevant product knowledge base at
+   `../../products/<product>.md`.
 
 4. **User feedback?** Did the user correct our approach or confirm a
    non-obvious choice? Save a memory file.
@@ -248,8 +243,8 @@ retrospective branch instead:
 ```bash
 git checkout -b retro/pr-$PR
 
-# Make edits to references/known-patterns.md, infra-providers.md, etc.
-git add .claude/skills/validate-pr/
+# Make edits to shared/known-patterns.md, products/<product>.md, etc.
+git add .claude/shared/ .claude/products/ .claude/skills/
 git commit -s -m 'Update validate-pr skill from PR #<N> retrospective
 
 - <list changes made>
@@ -267,7 +262,7 @@ git stash
 git checkout agentic-workflows
 # Make edits
 git add .claude/skills/validate-pr/
-git commit -s -m 'Update validate-pr skill from PR #<N> retrospective'
+git commit -s -m 'Update skills from PR #<N> retrospective'
 git push connor agentic-workflows
 git checkout -
 git stash pop
