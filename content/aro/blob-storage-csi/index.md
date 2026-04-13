@@ -75,6 +75,7 @@ The Azure Blob CSI driver supports two common dynamic provisioning models:
     export BLOB_CONTAINER_NAME=aroblob
     ```
 
+The storage account name must be globally unique in Azure. Update `STORAGE_ACCOUNT_NAME` if the sample name is already in use.
 
 ## Create an identity for the CSI Driver to access the Blob Storage
 
@@ -90,7 +91,7 @@ For the validated ARO path used here, this includes:
 1. Create a service principal for the Blob CSI driver:
 
     ```bash
-    az ad sp create-for-rbac --name http://$CSI_BLOB_SECRET --skip-assignment
+    az ad sp create-for-rbac --name http://$CSI_BLOB_SECRET
     ```
 
     Example output:
@@ -103,6 +104,8 @@ For the validated ARO path used here, this includes:
       "tenant": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
     }
     ```
+
+    Note that the service principal name based on `http://$CSI_BLOB_SECRET` must be unique enough to avoid colliding with an existing Azure AD app.
 
 1. Export the values from the command output:
 
@@ -170,6 +173,8 @@ For the validated ARO path used here, this includes:
 
 After creating the identity and required Azure configuration, install the Azure Blob CSI driver on the cluster.
 
+On ARO, the default Blob CSI Helm install needs an additional workaround. During validation on ARO 4.20, the default chart left the node pods stuck in `Init:CreateContainerError` because the init container tries to mount `/usr/local`, which is a symlink on RHCOS. And therefore, disable those components at install time and remove the init container from the node DaemonSet.
+
 1. Add the Blob CSI driver Helm repository:
 
     ```bash
@@ -177,11 +182,29 @@ After creating the identity and required Azure configuration, install the Azure 
     helm repo update
     ```
 
-1. Install the Blob CSI driver chart:
+1. Install the Blob CSI driver chart with the ARO-specific settings:
 
     ```bash
     helm install blob-csi-driver blob-csi-driver/blob-csi-driver \
-      --namespace kube-system
+      --namespace kube-system \
+      --set node.enableBlobfuseProxy=false \
+      --set node.enableAznfsMount=false
+    ```
+
+1. Confirm the Blob CSI node DaemonSet name:
+
+    ```bash
+    oc get daemonset -n kube-system | grep blob
+    ```
+
+    In this case, the node DaemonSet was `csi-blob-node`.
+
+1. Remove the init container from the Blob CSI node DaemonSet:
+
+    ```bash
+    oc patch daemonset csi-blob-node -n kube-system \
+      --type='json' \
+      -p='[{"op":"remove","path":"/spec/template/spec/initContainers"}]'
     ```
 
 1. Verify that the Blob CSI driver pods are running:
@@ -190,7 +213,7 @@ After creating the identity and required Azure configuration, install the Azure 
     oc get pods -n kube-system | grep blob
     ```
 
-    Expected output should include the Blob CSI controller and node pods in a `Running` state.
+    Expected output should include the Blob CSI controller and node pods in a `Running` state after applying the ARO-specific workaround above.
 
 1. If you created or updated the ARO-specific controller configuration in the previous section, restart the controller so it picks up the latest configuration:
 
@@ -206,7 +229,7 @@ After creating the identity and required Azure configuration, install the Azure 
     oc logs -n kube-system deploy/csi-blob-controller -c blob --tail=100 | cat
     ```
 
-    At this point, the Blob CSI controller should be running without missing cloud configuration errors and ready for the StorageClass and PVC workflow used in the next section.
+    At this point, the Blob CSI controller should be running without missing cloud configuration errors and ready for the StorageClass and PVC workflow used in the next section. 
 
 
 ## Test the CSI driver is working
@@ -452,10 +475,10 @@ After testing is complete, remove the test resources created for the Blob CSI va
     oc delete project $CSI_TESTING_PROJECT
     ```
 
-1. If no longer needed, delete the Blob CSI driver resources project:
+1. Uninstall the Blob CSI driver Helm chart:
 
     ```bash
-    oc delete project $CSI_BLOB_PROJECT
+    helm uninstall blob-csi-driver -n kube-system
     ```
 
 1. If you created the ARO-specific controller configuration for this validation and no longer need it, remove it from `kube-system`:
