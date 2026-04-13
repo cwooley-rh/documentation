@@ -1,48 +1,84 @@
 ---
 date: '2023-02-21'
-title: ROSA with Nvidia GPU Workloads - Manual
+title: ROSA with NVIDIA GPU workloads and OpenShift AI
 tags: ["ROSA"]
 authors:
   - Chris Kang
   - Diana Sari
+validated_version: "4.20"
 ---
 
 
-This is a guide to install GPU on ROSA cluster manually, which is an alternative to our [Helm chart guide](https://cloud.redhat.com/experts/rosa/gpu/).
+This guide shows how to add NVIDIA GPU capacity to an existing Red Hat OpenShift Service on AWS (ROSA) cluster and validate it for use with Red Hat OpenShift AI.
 
-### Prerequisites
+The flow in this guide covers:
 
-* ROSA cluster (4.14+) 
-    - You can install a Classic version using [CLI](https://cloud.redhat.com/experts/rosa/sts/) or an HCP one using [Terraform](https://cloud.redhat.com/experts/rosa/terraform/hcp/).
-    - Please be sure you are logged in to the cluster with a cluster admin access.
-* rosa cli
-* oc cli
+* creating a GPU machine pool on ROSA
+* installing Node Feature Discovery (NFD)
+* installing the NVIDIA GPU Operator 
+* creating a `ClusterPolicy`
+* verifying that the GPU is exposed to the cluster
+* enabling OpenShift AI hardware profiles
+* creating a GPU-backed hardware profile and validating a GPU-enabled workbench
+
+This guide was validated on ROSA 4.20 with OpenShift AI 2025.2 using an NVIDIA Tesla T4 GPU on an AWS `g4dn.xlarge` instance.
 
 
-### 1. Setting up GPU machine pools
+## 0. Prerequisites
 
-In this tutorial, I'm using `g5.4xlarge node` for the GPU machine pools with auto-scaling enabled up to 4 nodes. Please replace `your-cluster-name` with the name of your cluster. 
+Before you begin, make sure you have:
 
-*Note that you can also use another instance type and not using auto-scaling.* 
+* an existing ROSA cluster with `cluster-admin` access
+* the `rosa` CLI configured for your cluster
+* the `oc` CLI configured and logged in
+* sufficient AWS quota and capacity for a GPU instance type in your target Region and Availability Zone
+* Red Hat OpenShift AI already installed if you want to validate GPU-backed workbenches from the dashboard
 
+This walkthrough was validated on an existing ROSA cluster in `ca-central-1` using a `g4dn.xlarge` GPU machine pool.
+
+## 1. Create a GPU machine pool
+
+Start by creating a dedicated GPU machine pool instead of modifying existing worker pools. This keeps GPU workloads isolated and makes scheduling easier to reason about.
+
+```bash
+export CLUSTER=<your-cluster-name>
+export GPU_MP_NAME=gpu
+export GPU_INSTANCE_TYPE=g4dn.xlarge
+
+rosa create machinepool \
+  --cluster=$CLUSTER \
+  --name=$GPU_MP_NAME \
+  --replicas=1 \
+  --instance-type=$GPU_INSTANCE_TYPE \
+  --labels=node-role.kubernetes.io/gpu=,nvidia.com/gpu.present=true \
+  --taints=nvidia.com/gpu=true:NoSchedule
 ```
-rosa create machinepool --cluster=<your-cluster-name> --name=gpu-pool --instance-type=g5.4xlarge --min-replicas=1 --max-replicas=4 --enable-autoscaling --labels='gpu-node=true' --taints='nvidia.com/gpu=present:NoSchedule'
+
+The GPU machine pool can take several minutes to provision. Wait until the new node joins the cluster and the machine pool shows `1/1`.
+
+```bash
+rosa list machinepools -c $CLUSTER
+oc get nodes
+oc get nodes -L node-role.kubernetes.io/gpu
 ```
 
-### 2. Installing NFD operator
+At this stage, the GPU node existed but did not yet advertise `nvidia.com/gpu`, because the GPU software stack had not yet been installed.
 
-The [Node Feature Discovery operator](https://github.com/kubernetes-sigs/node-feature-discovery-operator) will discover the GPU on your nodes and NFD instance will appropriately label the nodes so you can target them for workloads. Please refer to the [official OpenShift documentation](https://docs.openshift.com/container-platform/4.16/hardware_enablement/psap-node-feature-discovery-operator.html) for more details.  
 
-```
-# create the openshift-nfd namespace
-oc create namespace openshift-nfd
+## 2. Install the Node Feature Discovery Operator
 
-# apply the OperatorGroup and Subscription
-cat <<EOF | oc apply -f -
+Install the Node Feature Discovery (NFD) Operator from OperatorHub. NFD is used to discover hardware capabilities and label nodes appropriately. OpenShift AI documentation still requires creating a `NodeFeatureDiscovery` instance after installing the operator. 
+
+```bash
+cat <<'EOF' | oc apply -f -
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-nfd
+---
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
-  generateName: openshift-nfd-
   name: openshift-nfd
   namespace: openshift-nfd
 spec:
@@ -55,86 +91,63 @@ metadata:
   name: nfd
   namespace: openshift-nfd
 spec:
-  channel: "stable"
+  channel: stable
   installPlanApproval: Automatic
   name: nfd
   source: redhat-operators
   sourceNamespace: openshift-marketplace
 EOF
-
-echo "Waiting for NFD Operator to be deployed..."
-
-# wait for the NFD Operator deployment to be available
-while ! oc get deployment -n openshift-nfd | grep -q nfd-controller-manager; do
-  sleep 5
-done
-
-# wait for the deployment to be ready
-oc wait --for=condition=available --timeout=300s deployment/nfd-controller-manager -n openshift-nfd
-
-# check if the deployment is ready
-if [ $? -eq 0 ]; then
-  echo "NFD Operator is deployed and ready."
-else
-  echo "Timeout waiting for NFD Operator to be ready. Please check the deployment status manually."
-fi
-
-# display the pods in the openshift-nfd namespace
-echo "Pods in openshift-nfd namespace:"
-oc get pods -n openshift-nfd
 ```
 
-Note that this above might take a few minutes. And then next, we will create the NFD instance.
+Wait for the operator to install:
 
+```bash
+oc get csv -n openshift-nfd -w
 ```
-# apply the NodeFeatureDiscovery configuration
-cat <<EOF | oc apply -f -
-kind: NodeFeatureDiscovery
+
+Create the `NodeFeatureDiscovery` instance:
+
+```bash
+cat <<'EOF' | oc apply -f -
 apiVersion: nfd.openshift.io/v1
+kind: NodeFeatureDiscovery
 metadata:
   name: nfd-instance
   namespace: openshift-nfd
-spec:
-  operand:
-    servicePort: 12000
+spec: {}
 EOF
-
-echo "Waiting for NFD instance to be created..."
-timeout 300 bash -c 'until oc get nodefeaturediscovery nfd-instance -n openshift-nfd &>/dev/null; do sleep 5; done'
-
-if [ $? -eq 0 ]; then
-    echo "NFD instance has been successfully created."
-else
-    echo "Timed out waiting for NFD instance to be created."
-    exit 1
-fi
 ```
 
+Verify the pods:
 
-### 3. Installing GPU operator
-
-Next, we will set up [NVIDIA GPU Operator](https://github.com/NVIDIA/gpu-operator) that manages NVIDIA software components and `ClusterPolicy` object to ensure the right setup for NVIDIA GPU in the OpenShift environment. Please refer to the [official NVIDIA documentation](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/openshift/install-gpu-ocp.html) for more details.
-
+```bash
+oc get nodefeaturediscovery -n openshift-nfd
+oc get pods -n openshift-nfd
 ```
-# fetch the latest channel
-CHANNEL=$(oc get packagemanifest gpu-operator-certified -n openshift-marketplace -o jsonpath='{.status.defaultChannel}')
 
-# fetch the latest CSV
-STARTINGCSV=$(oc get packagemanifests/gpu-operator-certified -n openshift-marketplace -o json | jq -r --arg CHANNEL "$CHANNEL" '.status.channels[] | select(.name == $CHANNEL) | .currentCSV')
+At this point, all NFD components should be in `Running` state.
 
-# create namespace if it doesn't exist
-oc create namespace nvidia-gpu-operator 2>/dev/null || true
+## 3. Install the NVIDIA GPU Operator
 
-# apply the OperatorGroup and Subscription
-cat << EOF | oc apply -f -
+After NFD is installed, install the NVIDIA GPU Operator. In this guide, the operators are installed with the CLI for repeatability and easy copy/paste. You can also install the same operators from Software Catalog (formerly known as OperatorHub) in the OpenShift web console if you prefer a UI-based workflow.
+
+The current certified package in Software Catalog is `gpu-operator-certified`. NVIDIA’s OpenShift installation flow still centers on installing the operator and then creating a `ClusterPolicy`.
+
+```bash
+cat <<'EOF' | oc apply -f -
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nvidia-gpu-operator
+---
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
-  name: nvidia-gpu-operator-group
+  name: nvidia-gpu-operator
   namespace: nvidia-gpu-operator
 spec:
- targetNamespaces:
- - nvidia-gpu-operator
+  targetNamespaces:
+  - nvidia-gpu-operator
 ---
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
@@ -142,149 +155,192 @@ metadata:
   name: gpu-operator-certified
   namespace: nvidia-gpu-operator
 spec:
-  channel: "${CHANNEL}"
+  channel: stable
   installPlanApproval: Automatic
   name: gpu-operator-certified
   source: certified-operators
   sourceNamespace: openshift-marketplace
 EOF
-
-# wait for the CSV to be available
-echo "Waiting for ClusterServiceVersion to be available..."
-while ! oc get csv -n nvidia-gpu-operator ${STARTINGCSV} &>/dev/null; do
-    sleep 5
-done
-
-# apply the ClusterPolicy
-oc get csv -n nvidia-gpu-operator ${STARTINGCSV} -ojsonpath='{.metadata.annotations.alm-examples}' | jq '.[0]' | oc apply -f -
-
-echo "GPU Operator installation completed successfully."
 ```
 
-And finally, let's update the `ClusterPolicy`.
+Wait for the CSV:
 
-```
-# apply the ClusterPolicy for the GPU operator
-cat <<EOF | oc apply -f -
-apiVersion: nvidia.com/v1
-kind: ClusterPolicy
-metadata:
-  name: gpu-cluster-policy
-spec:
-  operator:
-    defaultRuntime: crio
-  daemonsets:
-    enabled: true
-  dcgm:
-    enabled: true
-  dcgmExporter:
-    enabled: true
-  devicePlugin:
-    enabled: true
-  driver:
-    enabled: true
-  gfd:
-    enabled: true
-  migManager:
-    enabled: true
-  nodeStatusExporter:
-    enabled: true
-  toolkit:
-    enabled: true
-EOF
-
-echo "Waiting for ClusterPolicy to be ready..."
-if oc wait clusterpolicy/gpu-cluster-policy --for=condition=Ready --timeout=300s -n gpu-operator-resources; then
-    echo "ClusterPolicy has been successfully created and is ready."
-    echo "ClusterPolicy status:"
-    oc get clusterpolicy -n gpu-operator-resources
-else
-    echo "Timed out waiting for ClusterPolicy to be ready."
-    exit 1
-fi
+```bash
+oc get csv -n nvidia-gpu-operator -w
 ```
 
-### Validating GPU (optional)
+In this validation, the installed CSV was `gpu-operator-certified.v26.3.0`.
 
-By now you should have your GPU setup correctly, however, if you'd like to validate it, you could run the following on terminal. 
+## 4. Create the `ClusterPolicy`
 
+Create the `ClusterPolicy` using the operator-provided defaults:
 
+```bash
+oc get csv -n nvidia-gpu-operator gpu-operator-certified.v26.3.0 \
+  -o jsonpath='{.metadata.annotations.alm-examples}' \
+| jq -r '.[] | select(.kind=="ClusterPolicy")' > gpu-cluster-policy.json
+
+cat gpu-cluster-policy.json
+oc apply -f gpu-cluster-policy.json
 ```
-# wait for GPU operator components
-wait_for_gpu_operator() {
-    echo "Waiting for GPU Operator components to be ready..."
-    while [[ $(oc get pods -n nvidia-gpu-operator -o 'jsonpath={..status.conditions[?(@.type=="Ready")].status}' | grep -v True) != "" ]]; do
-        echo "Waiting for all pods to be ready in nvidia-gpu-operator namespace..."
-        sleep 10
-    done
-    echo "All GPU Operator components are ready."
+
+Verify readiness:
+
+```bash
+oc get clusterpolicy
+oc describe clusterpolicy gpu-cluster-policy
+oc get pods -n nvidia-gpu-operator
+```
+
+The `gpu-cluster-policy` should reach `State: ready`.
+
+## 5. Verify GPU capacity on the node
+
+After the `ClusterPolicy` reconciles, verify that the GPU node exposes allocatable GPU resources.
+
+```bash
+oc get nodes -o json | jq '.items[] | {name: .metadata.name, gpu: .status.allocatable["nvidia.com/gpu"]}'
+```
+
+An example of expected output:
+
+```json
+{
+  "name": "ip-10-0-1-224.ca-central-1.compute.internal",
+  "gpu": "1"
 }
+```
 
-# verify NFD can see your GPU(s)
-echo "Verifying NFD GPU detection:"
-oc describe node -l node-role.kubernetes.io/worker="" | grep nvidia.com/gpu.present || echo "No GPU nodes detected"
+The GPU node reported `nvidia.com/gpu: "1"` which means that the NVIDIA stack was working at the cluster level.
 
-# verify GPU Operator added node label to your GPU nodes
-echo -e "\nVerifying GPU node labels:"
-oc get node -l nvidia.com/gpu.present || echo "No nodes with GPU labels found"
+## 6. Validate the GPU with a simple pod
 
-# wait for GPU operator components
-wait_for_gpu_operator
+Before moving to OpenShift AI, validate the GPU with a simple test pod.
 
-# test GPU access using NVIDIA SMI
-echo -e "\nTesting GPU access with NVIDIA SMI:"
-DRIVER_POD=$(oc get pods -n nvidia-gpu-operator | grep nvidia-driver | grep Running | awk '{print $1}' | head -n 1)
-if [ -n "$DRIVER_POD" ]; then
-    echo "Running nvidia-smi in pod $DRIVER_POD"
-    oc exec -n nvidia-gpu-operator $DRIVER_POD -c nvidia-driver-ctr -- nvidia-smi || echo "Failed to run nvidia-smi"
-else
-    echo "No NVIDIA driver pod found. Checking all pods in nvidia-gpu-operator namespace:"
-    oc get pods -n nvidia-gpu-operator
-    echo "Unable to find a running NVIDIA driver pod. Please check if the NVIDIA GPU Operator is installed correctly."
-fi
-
-# create and run a test pod
-echo -e "\nRunning a test GPU workload:"
-cat <<EOF | oc create -f - || echo "Failed to create test pod"
+```bash
+cat <<'EOF' | oc apply -f -
 apiVersion: v1
 kind: Pod
 metadata:
-  name: cuda-vector-add
-  namespace: nvidia-gpu-operator
+  name: nvidia-smi
 spec:
-  restartPolicy: OnFailure
-  containers:
-    - name: cuda-vector-add
-      image: "nvidia/samples:vectoradd-cuda11.2.1"
-      resources:
-        limits:
-          nvidia.com/gpu: 1
+  restartPolicy: Never
   tolerations:
-  - key: "nvidia.com/gpu"
-    operator: "Exists"
-    effect: "NoSchedule"
+  - key: nvidia.com/gpu
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+  containers:
+  - name: nvidia-smi
+    image: nvcr.io/nvidia/cuda:12.5.0-base-ubi9
+    command: ["/bin/bash","-lc","nvidia-smi && sleep 5"]
+    resources:
+      limits:
+        nvidia.com/gpu: 1
 EOF
-
-# wait for the pod to complete and check its logs
-echo "Waiting for test pod to complete..."
-if oc wait --for=condition=completed pod/cuda-vector-add -n nvidia-gpu-operator --timeout=120s; then
-    oc logs cuda-vector-add -n nvidia-gpu-operator || echo "Failed to retrieve logs"
-else
-    echo "Test pod did not complete within the expected time. Checking pod status:"
-    oc describe pod cuda-vector-add -n nvidia-gpu-operator
-fi
-
-# clean up
-echo -e "\nCleaning up:"
-oc delete pod cuda-vector-add -n nvidia-gpu-operator || echo "Failed to delete test pod"
-
-echo "GPU validation process completed."
 ```
 
-In essence, here we verify that NFD can detect the GPUs, run `nvidia-smi` on the GPU driver daemonset pod, run a simple CUDA vector addition test pod, and delete it.
+Watch it and inspect the logs:
 
+```bash
+oc get pod nvidia-smi -w
+oc logs nvidia-smi
+```
 
-Note that this validation step could take a few minutes to complete. And if you were seeing any error(s) such as "No GPU nodes detected", "Failed to run nvidia-smi", etc., then you might want to try again in the next few minutes. 
+In this validation, the pod moved from `ContainerCreating` to `Running` in a few seconds and then completed successfully. The `nvidia-smi` output showed a Tesla T4 and confirmed that the driver and CUDA stack were functioning correctly.
 
+## 7. Enable OpenShift AI hardware profiles
 
+To expose the newer hardware-profile workflow, enable hardware profiles in the `OdhDashboardConfig` custom resource. [OpenShift AI docs](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/2.25/html-single/working_with_accelerators/index) describe `disableHardwareProfiles=false` as the setting that shows **Settings -> Hardware profiles** in the dashboard. 
 
+Patch the dashboard config:
+
+```bash
+oc patch odhdashboardconfig odh-dashboard-config \
+  -n redhat-ods-applications \
+  --type merge \
+  -p '{
+    "spec": {
+      "dashboardConfig": {
+        "disableHardwareProfiles": false
+      }
+    }
+  }'
+```
+
+Optional verification:
+
+```bash
+oc get odhdashboardconfig odh-dashboard-config \
+  -n redhat-ods-applications -o yaml | egrep -n 'disableHardwareProfiles|disableAcceleratorProfiles'
+```
+
+After this change and a page refresh, the dashboard displayed **Settings -> Hardware profiles** and the workbench form switched to the hardware-profile-based UI.
+
+## 8. Create a GPU hardware profile in OpenShift AI
+
+The default hardware profiles that appear in the dashboard, such as Small, Medium, Large, and X Large, are CPU and memory profiles only. They do not automatically request a GPU. Create a dedicated GPU hardware profile for the workbench from **Settings -> Hardware profiles**. 
+
+These are the hardware profile settings validated in this guide: 
+
+> * **Name:** `t4-gpu`
+>
+> * **Visibility:** Visible everywhere
+>
+> * **Additional resource:**
+>   * Resource name: `nvidia-gpu`
+>   * Resource identifier: `nvidia.com/gpu`
+>   * Resource type: `Other`
+>   * Default: `1`
+>   * Minimum allowed: `1`
+>   * Maximum allowed: `1`
+>
+> * **Node selector:**
+>   * Key: `nvidia.com/gpu.present`
+>   * Value: `true`
+>
+> * **Toleration:**
+>   * Key: `nvidia.com/gpu`
+>   * Operator: `Equal`
+>   * Value: `true`
+>   * Effect: `NoSchedule`
+
+Once created, the hardware profile should look like this:
+
+![hardware-profile](images/hardware-profile.png)
+<br />
+
+## 9. Create and validate a GPU-backed workbench
+
+After you create the GPU hardware profile, return to your data science project and create a new workbench using that profile.
+
+Wait until the status is `Running` per snippet below:
+
+![project-gpu](images/project-gpu.png)
+<br />
+
+To verify where the workbench landed and what resources it requested, inspect the pod:
+
+```bash
+oc get pods -n project-gpu -o wide
+
+oc get pod -n project-gpu project-gpu-workbench-0 -o yaml | egrep -n "nvidia.com/gpu|nodeSelector|tolerations"
+```
+
+At this stage, the workbench pod should:
+
+* runs on the GPU node
+* requests `nvidia.com/gpu: "1"`
+* uses `nodeSelector: nvidia.com/gpu.present: "true"`
+* includes a toleration for `nvidia.com/gpu=true:NoSchedule`
+
+Finally, open a terminal in the running workbench and confirm that the GPU is available:
+
+```bash
+nvidia-smi
+```
+
+![nvidia-smi](images/nvidia-smi.png)
+<br />
+
+As seen from the above output, `nvidia-smi` inside the workbench showed an NVIDIA Tesla T4, confirming that the workbench had end-to-end GPU access through OpenShift AI.
