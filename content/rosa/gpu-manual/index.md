@@ -176,7 +176,9 @@ In this validation, the installed CSV was `gpu-operator-certified.v26.3.0`.
 Create the `ClusterPolicy` using the operator-provided defaults:
 
 ```bash
-oc get csv -n nvidia-gpu-operator gpu-operator-certified.v26.3.0 \
+CSV_NAME=$(oc get csv -n nvidia-gpu-operator -o name | grep gpu-operator-certified)
+
+oc get $CSV_NAME -n nvidia-gpu-operator \
   -o jsonpath='{.metadata.annotations.alm-examples}' \
 | jq -r '.[] | select(.kind=="ClusterPolicy")' > gpu-cluster-policy.json
 
@@ -329,7 +331,7 @@ oc get pod -n project-gpu project-gpu-workbench-0 -o yaml | egrep -n "nvidia.com
 
 At this stage, the workbench pod should:
 
-* runs on the GPU node
+* run on the GPU node
 * requests `nvidia.com/gpu: "1"`
 * uses `nodeSelector: nvidia.com/gpu.present: "true"`
 * includes a toleration for `nvidia.com/gpu=true:NoSchedule`
@@ -344,3 +346,49 @@ nvidia-smi
 <br />
 
 As seen from the above output, `nvidia-smi` inside the workbench showed an NVIDIA Tesla T4, confirming that the workbench had end-to-end GPU access through OpenShift AI.
+
+
+## Clean up
+
+After testing is complete, remove the resources created by this guide.
+
+1. Delete the workbench and test project:
+
+    ```bash
+    oc delete project project-gpu
+    ```
+
+1. Delete the nvidia-smi test pod:
+
+    ```bash
+    oc delete pod nvidia-smi -n default
+    ```
+
+1. Delete the ClusterPolicy:
+
+    ```bash
+    oc delete clusterpolicy gpu-cluster-policy
+    ```
+
+1. Delete the NVIDIA GPU Operator:
+
+    ```bash
+    oc delete subscription gpu-operator-certified -n nvidia-gpu-operator
+    oc delete csv -n nvidia-gpu-operator -l operators.coreos.com/gpu-operator-certified.nvidia-gpu-operator
+    oc delete project nvidia-gpu-operator
+    ```
+
+1. Delete the Node Feature Discovery Operator:
+
+    ```bash
+    oc delete nodefeaturediscovery nfd-instance -n openshift-nfd
+    oc delete subscription nfd -n openshift-nfd
+    oc delete csv -n openshift-nfd -l operators.coreos.com/nfd.openshift-nfd
+    oc delete project openshift-nfd
+    ```
+
+1. Delete the GPU machine pool:
+
+    ```bash
+    rosa delete machinepool -c $CLUSTER $GPU_MP_NAME --yes
+    ```
