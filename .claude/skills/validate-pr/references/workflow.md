@@ -71,21 +71,22 @@ az provider show -n Microsoft.RedHatOpenShift --query "registrationState"
 
 ### Provision via Terraform
 
-Clone the appropriate Terraform repo into `/tmp/`:
+Clone the appropriate Terraform repo into `/tmp/`, suffixed by PR number
+to support parallel sessions:
 
 ```bash
 # ROSA
-git clone --depth=1 https://github.com/rh-mobb/terraform-rosa.git /tmp/terraform-rosa
+git clone --depth=1 https://github.com/rh-mobb/terraform-rosa.git /tmp/terraform-rosa-$PR
 
 # ARO
-git clone --depth=1 https://github.com/rh-mobb/terraform-aro.git /tmp/terraform-aro
+git clone --depth=1 https://github.com/rh-mobb/terraform-aro.git /tmp/terraform-aro-$PR
 ```
 
-Set variables and apply. See `infra-providers.md` for provider-specific
-variable lists.
+Set variables and apply. Use `cwooley-pr$PR` as the cluster name for
+isolation. See `infra-providers.md` for provider-specific variable lists.
 
 ```bash
-cd /tmp/terraform-<provider>
+cd /tmp/terraform-<provider>-$PR
 terraform init
 terraform plan -out tf.plan
 terraform apply tf.plan
@@ -240,9 +241,12 @@ Walk through these questions and act on any "yes":
 
 ### Commit the updates
 
+When running in a worktree (parallel sessions), do NOT checkout a shared
+branch — git forbids two worktrees on the same branch. Use a PR-specific
+retrospective branch instead:
+
 ```bash
-git stash  # if on a fix branch with uncommitted changes
-git checkout feature/validate-pr-skill
+git checkout -b retro/pr-$PR
 
 # Make edits to references/known-patterns.md, infra-providers.md, etc.
 git add .claude/skills/validate-pr/
@@ -252,9 +256,30 @@ git commit -s -m 'Update validate-pr skill from PR #<N> retrospective
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>'
 
-git push connor feature/validate-pr-skill
-git checkout -   # return to previous branch
-git stash pop    # if needed
+git push connor retro/pr-$PR
+```
+
+When running solo (not in a worktree), you can commit directly to
+`agentic-workflows`:
+
+```bash
+git stash
+git checkout agentic-workflows
+# Make edits
+git add .claude/skills/validate-pr/
+git commit -s -m 'Update validate-pr skill from PR #<N> retrospective'
+git push connor agentic-workflows
+git checkout -
+git stash pop
+```
+
+After parallel sessions finish, the orchestrator merges retro branches:
+
+```bash
+git checkout agentic-workflows
+git merge retro/pr-912 retro/pr-917  # etc.
+git push connor agentic-workflows
+git branch -d retro/pr-912 retro/pr-917
 ```
 
 ### Track what changed
@@ -283,4 +308,9 @@ After the retrospective, prompt the user before cleanup:
    # Azure
    az resource list --resource-group <rg> -o table
    ```
-4. **Local temp files**: remove `/tmp/terraform-*` directories
+4. **Local temp files**: remove `/tmp/terraform-*-$PR` directories
+5. **Worktree cleanup** (parallel sessions):
+   ```bash
+   git worktree remove .worktrees/pr-$PR
+   git branch -D validate-pr-$PR
+   ```

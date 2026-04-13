@@ -1,5 +1,9 @@
 # Infrastructure Providers
 
+All paths below use `$PR` as the PR number being validated. For single-PR
+sessions, `$PR` can be omitted (use bare `/tmp/terraform-rosa`). For
+parallel sessions, always include it to prevent state collisions.
+
 ## AWS / ROSA
 
 > **Default to HCP.** Always provision ROSA HCP (hosted control plane)
@@ -38,12 +42,15 @@ export TF_VAR_multi_az=false
 ### Provision
 
 ```bash
-git clone --depth=1 https://github.com/rh-mobb/terraform-rosa.git /tmp/terraform-rosa
-cd /tmp/terraform-rosa
+git clone --depth=1 https://github.com/rh-mobb/terraform-rosa.git /tmp/terraform-rosa-$PR
+cd /tmp/terraform-rosa-$PR
 terraform init
 terraform plan -out tf.plan
 terraform apply tf.plan
 ```
+
+> For parallel sessions, use a unique cluster name per PR:
+> `export TF_VAR_cluster_name="cwooley-pr$PR"`
 
 ### Login
 
@@ -63,7 +70,7 @@ terraform output -raw cluster_name
 ### Teardown
 
 ```bash
-cd /tmp/terraform-rosa
+cd /tmp/terraform-rosa-$PR
 TF_VAR_token=$(rosa token) terraform destroy -auto-approve
 ```
 
@@ -125,12 +132,15 @@ export TF_VAR_pull_secret_path="~/Downloads/pull-secret.txt"
 ### Provision
 
 ```bash
-git clone --depth=1 https://github.com/rh-mobb/terraform-aro.git /tmp/terraform-aro
-cd /tmp/terraform-aro
+git clone --depth=1 https://github.com/rh-mobb/terraform-aro.git /tmp/terraform-aro-$PR
+cd /tmp/terraform-aro-$PR
 terraform init
 terraform plan -out tf.plan
 terraform apply tf.plan
 ```
+
+> For parallel sessions, use a unique cluster name per PR:
+> `export TF_VAR_cluster_name="cwooley-pr$PR"`
 
 ### Login
 
@@ -168,7 +178,7 @@ terraform output -raw cluster_name
 ### Teardown
 
 ```bash
-cd /tmp/terraform-aro
+cd /tmp/terraform-aro-$PR
 terraform destroy -auto-approve
 ```
 

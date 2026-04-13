@@ -5,7 +5,7 @@ description: >-
   "test a documentation PR", "verify docs against a cluster",
   "/validate-pr", or mentions running guide steps against live
   infrastructure for rh-mobb/documentation pull requests.
-version: "0.3.0"
+version: "0.4.0"
 user-invocable: true
 ---
 
@@ -154,6 +154,82 @@ When a PR changes multiple guides:
 - Share infrastructure between guides that use the same cluster
 - Report per-guide results in separate sections of the test report
 - One fix commit covers all guides in the PR
+
+## Parallel Execution
+
+Multiple PRs can be validated simultaneously by running separate Claude
+sessions, each in an isolated git worktree with its own Terraform directory.
+
+### Setup (run once per parallel batch)
+
+```bash
+# For each PR:
+PR=912
+git fetch origin pull/$PR/head:validate-pr-$PR
+git worktree add .worktrees/pr-$PR validate-pr-$PR
+git clone --depth=1 https://github.com/rh-mobb/terraform-rosa.git /tmp/terraform-rosa-$PR
+```
+
+### Launch agents
+
+```bash
+# Terminal 1
+cd .worktrees/pr-912 && claude -p "/validate-pr 912"
+
+# Terminal 2
+cd .worktrees/pr-917 && claude -p "/validate-pr 917"
+```
+
+Each agent inherits the PR number from its invocation. All paths are
+parameterized by PR number:
+- **Worktree:** `.worktrees/pr-<PR>`
+- **Terraform:** `/tmp/terraform-<provider>-<PR>`
+- **Cluster name:** `cwooley-pr<PR>`
+- **Fix branch:** `fix/<topic>` (pushed from the worktree independently)
+
+### Retrospective isolation
+
+Agents must NOT checkout shared branches (like `agentic-workflows`) from
+inside a worktree — git forbids two worktrees on the same branch. Instead,
+each agent writes retrospective updates to a PR-specific branch:
+
+```bash
+git checkout -b retro/pr-$PR
+# edit known-patterns.md
+git commit && git push connor retro/pr-$PR
+```
+
+After all agents finish, merge retrospectives from the main worktree:
+
+```bash
+cd /Users/cwooley/projects/documentation
+git checkout agentic-workflows
+for branch in retro/pr-912 retro/pr-917; do
+  git merge $branch
+done
+git push connor agentic-workflows
+```
+
+### Cleanup
+
+```bash
+# Per-PR (after terraform destroy completes)
+git worktree remove .worktrees/pr-$PR
+git branch -D validate-pr-$PR
+rm -rf /tmp/terraform-<provider>-$PR
+```
+
+### Region spreading for GPU workloads
+
+When multiple PRs need GPU instances, spread across regions to avoid
+quota collisions:
+
+| Session | Region |
+|---------|--------|
+| 1 | us-east-1 |
+| 2 | us-east-2 |
+| 3 | us-west-2 |
+| 4 | ca-central-1 |
 
 ## Guard Rails
 
