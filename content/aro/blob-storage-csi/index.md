@@ -69,6 +69,8 @@ The Azure Blob CSI driver supports two common dynamic provisioning models:
 
 1. Set additional environment variables for the storage resources used by the test workflow, including the storage account and blob container names:
 
+    > Azure storage account names must be globally unique. Replace `aroblobsa` with a unique name (3-24 characters, lowercase letters and numbers only).
+
     ```bash
     export APP_NAME=myapp
     export STORAGE_ACCOUNT_NAME=aroblobsa
@@ -89,8 +91,10 @@ For the validated ARO path used here, this includes:
 
 1. Create a service principal for the Blob CSI driver:
 
+    > The service principal name must be globally unique across your Azure AD tenant. If you receive a conflict error, choose a different name.
+
     ```bash
-    az ad sp create-for-rbac --name http://$CSI_BLOB_SECRET --skip-assignment
+    az ad sp create-for-rbac --name http://$CSI_BLOB_SECRET
     ```
 
     Example output:
@@ -179,9 +183,20 @@ After creating the identity and required Azure configuration, install the Azure 
 
 1. Install the Blob CSI driver chart:
 
+    On ARO, the default Helm install includes an init container that attempts to install BlobFuse2 on the host by writing to `/usr/local`. This fails on RHCOS because `/usr/local` is a symlink and the container runtime cannot create the mount target. Disable the init container by setting `node.enableBlobfuseProxy` and `node.enableAznfsMount` to `false`:
+
     ```bash
     helm install blob-csi-driver blob-csi-driver/blob-csi-driver \
-      --namespace kube-system
+      --namespace kube-system \
+      --set node.enableBlobfuseProxy=false \
+      --set node.enableAznfsMount=false
+    ```
+
+1. The Helm chart still includes the init container definition even with these flags. Patch the DaemonSet to remove it:
+
+    ```bash
+    oc -n kube-system patch daemonset csi-blob-node --type json \
+      -p '[{"op": "remove", "path": "/spec/template/spec/initContainers"}]'
     ```
 
 1. Verify that the Blob CSI driver pods are running:
@@ -452,10 +467,10 @@ After testing is complete, remove the test resources created for the Blob CSI va
     oc delete project $CSI_TESTING_PROJECT
     ```
 
-1. If no longer needed, delete the Blob CSI driver resources project:
+1. Uninstall the Blob CSI driver Helm chart:
 
     ```bash
-    oc delete project $CSI_BLOB_PROJECT
+    helm uninstall blob-csi-driver --namespace kube-system
     ```
 
 1. If you created the ARO-specific controller configuration for this validation and no longer need it, remove it from `kube-system`:
