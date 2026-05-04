@@ -1,0 +1,83 @@
+---
+name: rosa-batch-2
+description: GPU-enabled ROSA HCP cluster for AI/ML workloads
+provider: rosa
+region: us-east-2  # separate region to avoid GPU quota conflicts
+cluster_type: hcp
+
+infrastructure:
+  workers:
+    count: 2
+    instance_type: m5.xlarge
+  gpu_workers:
+    count: 1
+    instance_type: g4dn.xlarge
+    labels:
+      - node-role.kubernetes.io/gpu=
+      - nvidia.com/gpu.present=true
+    taints:
+      - nvidia.com/gpu=true:NoSchedule
+  hosted_control_plane: true
+
+terraform_repo: https://github.com/rh-mobb/terraform-rosa.git
+terraform_dir: /tmp/terraform-rosa-batch-2
+
+prs:
+  - number: 912
+    title: "Updated the ROSA GPU guide to reflect the current OpenShift AI"
+    guide: content/rosa/gpu/index.md
+    cleanup_level: operator
+    estimated_duration: 120
+    status: validated  # already completed
+    notes: "Already validated, Steps 1-6 PASS, Steps 7-9 blocked by resource constraints"
+
+  - number: 668
+    title: "Deploying vLLM with Audio and LLM Inference on ROSA with GPUs"
+    guide: content/ai-ml/vllm-transcription-webapp/index.md
+    cleanup_level: operator
+    estimated_duration: 90
+    notes: "Requires GPU, may conflict with #912 operator versions"
+
+  - number: 909
+    title: "Updated the ROSA + RHOAI + S3 walkthrough"
+    guide: content/redhat/rhoai/rosa-s3/index.md
+    cleanup_level: operator
+    estimated_duration: 90
+    notes: "RHOAI + S3, can potentially share RHOAI install with #912"
+
+execution_order:
+  - pr: 912
+    skip: true  # already validated
+
+  - pr: 668
+    dependencies: []
+    cleanup_before: true  # full GPU operator cleanup from #912 if present
+
+  - pr: 909
+    dependencies: [668]
+    cleanup_before: true  # cleanup vLLM before RHOAI install
+
+estimated:
+  total_duration_minutes: 300
+  total_cost_usd: 6.50
+  cost_per_pr: 2.17
+  savings_vs_individual: 13.50
+
+validation:
+  conflict_level: high  # GPU operator conflicts
+  can_run_parallel: false
+  requires_gpu: true
+  gpu_count: 1
+  requires_network_isolation: false
+
+notes: |
+  High conflict batch due to GPU Operator and RHOAI installations.
+
+  Execution strategy:
+  1. Skip #912 (already validated)
+  2. Install fresh GPU stack for #668 (vLLM)
+  3. Full cleanup: Delete GPU Operator, vLLM resources
+  4. Install RHOAI for #909, test S3 integration
+
+  Alternative: If #909 and #912 RHOAI versions are compatible,
+  consider running #909 on same RHOAI install as #912 to save time.

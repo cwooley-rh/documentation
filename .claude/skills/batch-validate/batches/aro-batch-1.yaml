@@ -1,0 +1,93 @@
+---
+name: aro-batch-1
+description: Standard ARO cluster for infrastructure and storage guides
+provider: aro
+region: eastus
+cluster_type: standard
+
+infrastructure:
+  workers:
+    count: 3
+    instance_type: Standard_D4s_v3
+
+terraform_repo: https://github.com/rh-mobb/terraform-aro.git
+terraform_dir: /tmp/terraform-aro-batch-1
+
+prs:
+  - number: 908
+    title: "Update ARO quickstart guide"
+    guide_primary: content/aro/quickstart/index.md
+    guide_secondary: content/aro/federated-metrics/index.md
+    cleanup_level: namespace
+    estimated_duration: 90
+    notes: "Quickstart establishes baseline, federated-metrics builds on it"
+
+  - number: 914
+    title: "fix: update infrastructure nodes documentation for ARO"
+    guide: content/aro/add-infra-nodes/index.md
+    cleanup_level: none
+    estimated_duration: 60
+    notes: "Adds infra nodes to cluster, doesn't conflict with other guides"
+
+  - number: 889
+    title: "Updating Azure Blob CSI on ARO article"
+    guide: content/aro/blob-storage-csi/index.md
+    cleanup_level: namespace
+    estimated_duration: 60
+    notes: "Azure Blob CSI driver, namespace-scoped"
+
+  - number: 888
+    title: "update: quota, subs restrictions"
+    guide: content/aro/prereq-list/index.md
+    cleanup_level: none
+    estimated_duration: 15
+    validation_type: review_only
+    notes: "Documentation only, no cluster validation needed"
+
+execution_order:
+  - pr: 908
+    phase: quickstart
+    dependencies: []
+
+  - pr: 908
+    phase: federated_metrics
+    dependencies: [908-quickstart]
+    notes: "Second part of #908, builds on quickstart cluster"
+
+  - pr: 914
+    dependencies: [908-federated_metrics]
+    notes: "Adds infra nodes, validates scheduling"
+
+  - pr: 889
+    dependencies: [914]
+    notes: "Blob CSI on top of configured cluster"
+
+  - pr: 888
+    validation_type: review_only
+    notes: "Review prerequisites doc for accuracy"
+
+estimated:
+  total_duration_minutes: 225
+  total_cost_usd: 8.00
+  cost_per_pr: 1.60
+  savings_vs_individual: 12.00
+
+validation:
+  conflict_level: medium
+  can_run_parallel: false
+  requires_gpu: false
+  requires_network_isolation: false
+  layered_dependencies: true
+
+notes: |
+  Medium conflict batch with layered dependencies.
+
+  Execution strategy:
+  1. #908 Quickstart - establish ARO cluster baseline
+  2. #908 Federated Metrics - add Prometheus federation on top
+  3. #914 Add Infra Nodes - expand cluster with infrastructure nodes
+  4. #889 Blob CSI - install Azure Blob storage driver
+  5. #888 - review only, no execution
+
+  Each guide builds on the previous cluster state. Cleanup is minimal
+  because guides are additive rather than conflicting.
