@@ -1,0 +1,97 @@
+---
+name: docs-only-batch
+description: Documentation-only PRs requiring review but no cluster
+provider: none
+region: none
+cluster_type: none
+
+infrastructure:
+  none: true
+
+prs:
+  - number: 907
+    title: "ARO checklist"
+    guide: content/aro/checklist/index.md
+    validation_type: review
+    estimated_duration: 15
+    review_checklist:
+      - Documentation accuracy
+      - Checklist completeness
+      - Architecture diagrams clarity
+      - Prerequisites validity
+      - Link validity
+
+  - number: 888
+    title: "update: quota, subs restrictions"
+    guide: content/aro/prereq-list/index.md
+    validation_type: review
+    estimated_duration: 15
+    review_checklist:
+      - Prerequisites accuracy
+      - Quota requirements correct
+      - Subscription restrictions documented
+      - Azure service requirements valid
+
+  - number: 659
+    title: "add link to official oadp/azure doc as reference"
+    guide: content/aro/backup-restore/index.md
+    validation_type: review
+    estimated_duration: 15
+    review_checklist:
+      - Link validity (official OADP docs)
+      - Link placement appropriate
+      - Context around link clear
+      - No broken links introduced
+
+  - number: 892
+    title: "new document describing how Red Hat SREs access OpenShift Dedicated"
+    guide: content/osd/osd-google-sre-access/index.md
+    validation_type: review
+    estimated_duration: 30
+    review_checklist:
+      - WIF (Workload Identity Federation) description accurate
+      - PSC (Private Service Connect) architecture clear
+      - Process flow diagrams accurate
+      - Security implications explained
+      - Reference links valid
+
+execution_order:
+  - pr: 907
+    validation: review_only
+
+  - pr: 888
+    validation: review_only
+
+  - pr: 659
+    validation: review_only
+
+  - pr: 892
+    validation: review_only
+
+estimated:
+  total_duration_minutes: 75
+  total_cost_usd: 0
+  cost_per_pr: 0
+  savings_vs_individual: 20.00
+
+validation:
+  conflict_level: none
+  can_run_parallel: true
+  requires_gpu: false
+  requires_network_isolation: false
+  review_only: true
+
+notes: |
+  All PRs in this batch are documentation-only and require review
+  validation, not execution against live infrastructure.
+
+  Review process:
+  1. Read changed documentation
+  2. Validate accuracy of technical content
+  3. Check all hyperlinks are valid
+  4. Verify formatting and structure
+  5. Confirm prerequisites are complete
+  6. Post review comments to PR
+
+  Can be executed in parallel with infrastructure batches since
+  no cluster is required.

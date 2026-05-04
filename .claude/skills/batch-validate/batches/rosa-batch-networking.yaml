@@ -1,0 +1,52 @@
+---
+name: rosa-batch-networking
+description: ROSA HCP cluster for NLB networking guides
+provider: rosa
+region: ca-central-1
+cluster_type: hcp
+
+infrastructure:
+  workers:
+    count: 3
+    instance_type: m5.xlarge
+  hosted_control_plane: true
+
+terraform_repo: https://github.com/rh-mobb/terraform-rosa.git
+terraform_dir: /tmp/terraform-rosa-batch-networking
+
+prs:
+  - number: 615
+    title: "Connect to private HCP cluster using public NLB"
+    guide: content/rosa/hcp-public-nlb/_index.md
+    cleanup_level: config
+    estimated_duration: 45
+    notes: "Create public NLB configuration"
+
+  - number: 605
+    title: "Find NLB IPs the documented way"
+    guide: content/rosa/hcp-private-nlb/_index.md
+    cleanup_level: config
+    estimated_duration: 45
+    notes: "Create private NLB configuration"
+
+execution_order:
+  - pr: 615
+    dependencies: []
+    notes: "Public NLB first"
+
+  - pr: 605
+    dependencies: [615]
+    notes: "Private NLB second, different config"
+
+estimated:
+  total_duration_minutes: 180
+  total_cost_usd: 4.50
+  cost_per_pr: 2.25
+  savings_vs_individual: 5.50
+
+validation:
+  conflict_level: low
+  can_run_parallel: false
+  requires_gpu: false
+  requires_network_isolation: false
+  notes: "Both guides configure different NLB types, no conflict"

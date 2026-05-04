@@ -1,0 +1,80 @@
+---
+name: rosa-batch-standard
+description: ROSA standard cluster for low-conflict guides (metrics, IdP, networking)
+provider: rosa
+region: us-east-1
+cluster_type: hcp
+
+infrastructure:
+  workers:
+    count: 3
+    instance_type: m5.xlarge
+  hosted_control_plane: true
+
+terraform_repo: https://github.com/rh-mobb/terraform-rosa.git
+terraform_dir: /tmp/terraform-rosa-batch-standard
+
+prs:
+  - number: 916
+    title: "Add AWS Cognito and IAM Identity Center guide for ROSA cluster access"
+    guide: content/rosa/cognito-idp/index.md
+    cleanup_level: namespace
+    estimated_duration: 45
+    status: validated
+    notes: "Already validated in conservative test, can SKIP or re-test"
+
+  - number: 911
+    title: "added publish resources label to custom kms article"
+    guide: content/rosa/kms/index.md
+    cleanup_level: none
+    estimated_duration: 30
+    notes: "Read-only validation of KMS encryption"
+
+  - number: 920
+    title: "Updated cluster metrics to AWS prometheus"
+    guide: content/rosa/cluster-metrics-to-aws-prometheus/index.md
+    cleanup_level: namespace
+    estimated_duration: 60
+    notes: "Prometheus federation, namespace-scoped"
+
+  - number: 925
+    title: "Updated private-ingress-controller-with-alb guide"
+    guide: content/rosa/private-ingress-controller-with-alb/index.md
+    cleanup_level: config
+    estimated_duration: 50
+    notes: "Updates ingress controller config"
+
+  - number: 687
+    title: "Added missing healthcheck port exposure command"
+    guide: content/rosa/nlb-cf-vpco/index.md
+    cleanup_level: namespace
+    estimated_duration: 45
+    notes: "NLB + CloudFront, networking"
+
+execution_order:
+  - pr: 916
+    skip: true  # already validated in conservative test
+
+  - pr: 911
+    dependencies: []
+
+  - pr: 920
+    dependencies: []
+
+  - pr: 925
+    dependencies: [920]
+
+  - pr: 687
+    dependencies: [925]
+
+estimated:
+  total_duration_minutes: 240
+  total_cost_usd: 6.00
+  cost_per_pr: 1.20
+  savings_vs_individual: 19.00
+
+validation:
+  conflict_level: low
+  can_run_parallel: false
+  requires_gpu: false
+  requires_network_isolation: false

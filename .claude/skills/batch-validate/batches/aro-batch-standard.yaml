@@ -1,0 +1,90 @@
+---
+name: aro-batch-standard
+description: ARO standard cluster for layered infrastructure guides
+provider: aro
+region: eastus
+cluster_type: standard
+
+infrastructure:
+  workers:
+    count: 3
+    instance_type: Standard_D4s_v3
+
+terraform_repo: https://github.com/rh-mobb/terraform-aro.git
+terraform_dir: /tmp/terraform-aro-batch-standard
+
+prs:
+  - number: 908
+    title: "Update ARO quickstart guide"
+    guide_primary: content/aro/quickstart/index.md
+    guide_secondary: content/aro/federated-metrics/index.md
+    cleanup_level: namespace
+    estimated_duration: 90
+    notes: "Two guides in one PR: quickstart establishes baseline, federated-metrics builds on it"
+
+  - number: 914
+    title: "fix: update infrastructure nodes documentation for ARO"
+    guide: content/aro/add-infra-nodes/index.md
+    cleanup_level: none
+    estimated_duration: 60
+    notes: "Additive - adds infrastructure nodes, doesn't conflict"
+
+  - number: 889
+    title: "Updating Azure Blob CSI on ARO article"
+    guide: content/aro/blob-storage-csi/index.md
+    cleanup_level: namespace
+    estimated_duration: 60
+    notes: "Azure Blob CSI driver, namespace-scoped"
+
+  - number: 689
+    title: "enhancement: variable moved to impersonated envvar"
+    guide: content/aro/lightspeed/index.md
+    cleanup_level: operator
+    estimated_duration: 60
+    notes: "Lightspeed operator, may have namespace naming issue like #866"
+
+execution_order:
+  - pr: 908
+    phase: quickstart
+    dependencies: []
+    notes: "Establish ARO baseline cluster"
+
+  - pr: 908
+    phase: federated_metrics
+    dependencies: [908-quickstart]
+    notes: "Add Prometheus federation on top of quickstart"
+
+  - pr: 914
+    dependencies: [908-federated_metrics]
+    notes: "Add infrastructure nodes to cluster"
+
+  - pr: 889
+    dependencies: [914]
+    notes: "Install Blob CSI driver"
+
+  - pr: 689
+    dependencies: [889]
+    notes: "Install Lightspeed operator - CHECK namespace name first!"
+    pre_flight_check: "Verify namespace name doesn't start with 'openshift-'"
+
+estimated:
+  total_duration_minutes: 300
+  total_cost_usd: 10.00
+  cost_per_pr: 2.50
+  savings_vs_individual: 10.00
+
+validation:
+  conflict_level: medium
+  can_run_parallel: false
+  requires_gpu: false
+  requires_network_isolation: false
+  layered_dependencies: true
+
+notes: |
+  Medium conflict batch with layered dependencies. Each guide builds
+  on the previous cluster state. Cleanup is minimal because guides
+  are additive rather than conflicting.
+
+  IMPORTANT: PR #689 (Lightspeed) may have the same namespace naming
+  issue as PR #866. Verify the guide doesn't use a forbidden namespace
+  name before execution.
